@@ -1,6 +1,10 @@
 import {useState, useEffect, useRef, createContext, useContext} from 'react'
 import replies from  '../quickReplies.json'
 import socket from '../socket'
+import { db } from '../firebase';
+import { collection, addDoc, query, where, orderBy, onSnapshot, serverTimestamp } from 'firebase/firestore';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { storage } from '../firebase';
 
 const ChatBoxContext = createContext(null)
 
@@ -10,6 +14,8 @@ export const ChatBoxContextProvider = ({children}) => {
   const [optionVisible, setOptionVisible] = useState(true)
   const [isActive, setIsActive] = useState(true)
   const [isTyping, setIsTyping] = useState(false)
+  const [isRequest, setIsRequest] = useState(true)
+  const [isAdmin, setIsAdmin] = useState(false)
   const [showMenu, setShowMenu] = useState(false)
   const [currentTime, setCurrentTime] = useState(new Date())
   const [previewMedia, setPreviewMedia] = useState([])
@@ -41,12 +47,35 @@ export const ChatBoxContextProvider = ({children}) => {
       socket.emit('join-group', group, username)
       setCurrentGroup(group)
       setUsername(username)
+      loadMessagesFromFirestore(group);
     }
     setMessage([
       {text: 'Hello! Welcome.', sender:'vendor'},
       {text: 'How can I help you?', sender:'vendor'}
     ])
   }
+
+  const loadMessagesFromFirestore = (group) => {
+    const q = query(
+      collection(db, 'messages'),
+      where('group', '==', group),
+      orderBy('createdAt')
+    );
+
+    onSnapshot(q, (snapshot) => {
+      const msgs = snapshot.docs.map(doc => ({
+        ...doc.data(),
+        id: doc.data().id || doc.id,
+      }));
+      setMessage(msgs);
+    });
+  };
+
+  const uploadToFirebase = async (file, folder = 'chat-media') => {
+  const fileRef = ref(storage, `${folder}/${Date.now()}_${file.name}`);
+  await uploadBytes(fileRef, file);
+  return await getDownloadURL(fileRef);
+  };
 
   useEffect(() => {
     const handleReceiveMsg = (newMsg) => {
@@ -111,7 +140,7 @@ export const ChatBoxContextProvider = ({children}) => {
     setPreviewFile(prev => [...prev, ...previewfiles])
   }
 
-  const sendMessage = (text) => {
+  const sendMessage = async (text) => {
     const customText = (text ?? input).trim()
     const isText = customText !== '';
     const isMedia = selectedMedia.length>0;  
@@ -135,24 +164,42 @@ export const ChatBoxContextProvider = ({children}) => {
     }
     if(isMedia){
       newMsg.type = 'media'
-      newMsg.media = previewMedia.map((url, i) => ({
-        url,
-        type: selectedMedia[i].type.startsWith('image/') ? 'image' : 'video' 
-      }));
+      // newMsg.media = previewMedia.map((url, i) => ({
+      //   url,
+      //   type: selectedMedia[i].type.startsWith('image/') ? 'image' : 'video' 
+      // }));
+      newMsg.media = await Promise.all(
+        selectedMedia.map(async (file) => {
+          url: await uploadToFirebase(file, 'chat-media');
+          type: file.type.startsWith('image/') ? 'image' : 'video'
+        })
+      )
     }
     if (isFile){
       newMsg.type = 'file'
-      newMsg.file = previewFile.map((url, i) => ({
-        url,
-        name: selectedFile[i].name,
-        type: selectedFile[i].type
-      }))
+      // newMsg.file = previewFile.map((url, i) => ({
+      //   url,
+      //   name: selectedFile[i].name,
+      //   type: selectedFile[i].type
+      // }))
+      newMsg.file = await Promise.all(
+        selectedFile.map(async (file) => ({
+          url: await uploadToFirebase(file, 'chat-files'),
+          name: file.name,
+          type: file.type
+        }))
+      )
     }
     setMessage(prev => [...prev, newMsg])
     setLastOwnMsgId(newMsg.id)
     socket.emit('send-message', newMsg, currentGroup)
     socket.emit('stopTyping', currentGroup, socket.id);
   
+    const messagesRef = collection(db, 'messages');
+    await addDoc(messagesRef, {
+      ...newMsg,
+      createdAt: serverTimestamp()
+    });
     //resetting state
     setInput('')
     setOptionVisible(false)
@@ -208,7 +255,7 @@ export const ChatBoxContextProvider = ({children}) => {
   }
 
   return (
-    <ChatBoxContext.Provider value = {{message, input, optionVisible, isActive, isTyping, showMenu, previewMedia, previewFile, selectedMedia, selectedFile, date, day, scrollRef, quickReplies, toggleMenu, handleMediaChange, handleFileChange, sendMessage, handleKey, handleInputChange, setPreviewMedia, setSelectedFile, setPreviewFile, setIsActive, isEmoji, setIsEmoji, onEmojiClick, socket, joinGroup, lastOwnMsgId}}>
+    <ChatBoxContext.Provider value = {{message, input, optionVisible, isActive, isTyping, isRequest, isAdmin, showMenu, previewMedia, previewFile, selectedMedia, selectedFile, date, day, scrollRef, quickReplies, toggleMenu, handleMediaChange, handleFileChange, sendMessage, handleKey, handleInputChange, setPreviewMedia, setSelectedFile, setPreviewFile, setIsActive, isEmoji, setIsEmoji, onEmojiClick, socket, joinGroup, lastOwnMsgId}}>
         {children}
     </ChatBoxContext.Provider>
   )

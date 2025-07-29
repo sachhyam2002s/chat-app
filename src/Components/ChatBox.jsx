@@ -13,6 +13,8 @@ function ChatBox(props) {
     date, 
     day,
     isTyping,
+    isRequest,
+    isAdmin,
     quickReplies,
     showMenu,
     selectedMedia,
@@ -169,6 +171,16 @@ function ChatBox(props) {
         </div>
       )}
 
+      {isAdmin && isRequest &&(
+        <div ref={scrollRef} className='flex flex-col mx-1 items-center justify-center bg-gray-500 rounded-3xl mt-1  text-white p-2 gap-1 '>
+          <p className='w-60'>{socket.id} has requested to join the chat.</p>
+          <div className='flex items-center gap-2 '>
+            <button className='bg-blue-400 p-1 px-2 rounded-full cursor-pointer'>Accept</button>
+            <button className='bg-red-400 p-1 px-2 rounded-full cursor-pointer'>Cancel</button>
+          </div>
+        </div>
+      )}
+
       {Array.isArray(previewMedia) && previewMedia.length > 0 && (
         <div className='flex flex-wrap mx-1 bg-white'>
           {previewMedia.map((media, idx) => (
@@ -213,7 +225,7 @@ function ChatBox(props) {
       )}
 
       {isEmoji && (
-        <div className='absolute left-4 md:left-2 bottom-15 md:bottom-12 bg-gray-200 p-1 rounded-lg shadow-inner '>
+        <div className='absolute left-2 bottom-14 md:bottom-12 bg-gray-200 p-1 rounded-lg shadow-inner '>
           <EmojiPicker onEmojiClick={onEmojiClick} className='md:max-w-[250px] h-[50vh] md:max-h-[40vh]'/>
         </div>
       )}
